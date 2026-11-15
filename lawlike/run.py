@@ -4,6 +4,7 @@
     python -m lawlike.run --preset quick          # first real look
     python -m lawlike.run --preset full           # press go, walk away
     python -m lawlike.run --preset quick --analyze-only
+    python -m lawlike.run --preset full2a         # Phase 2a confirmation run (README 3b.6)
 
 Results stream to <out>/results.jsonl one world at a time, so you can stop (Ctrl-C) and
 re-run the same command to resume, and you can run the analysis on partial results at any
@@ -137,6 +138,10 @@ def main(argv=None):
     if not args.no_analyze:
         from .analyze import analyze
         analyze(out)
+        if getattr(cfg, "seed_mode", "crossed") == "per_rule":   # Phase 2a design
+            from .analyze2a import analyze2a
+            p1 = "results/full" if os.path.exists("results/full/results.jsonl") else None
+            analyze2a(out, phase1_dir=p1)
 
 
 if __name__ == "__main__":

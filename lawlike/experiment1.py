@@ -17,7 +17,7 @@ import numpy as np
 from . import info
 from .causal import CausalStates
 from .observers import FAMILIES, Extractor, enumerate_observers, null_stream
-from .worlds import World, realise
+from .worlds import World, realise, translation_period
 
 FILTERS = ("none", "persistence", "individuality", "blanket", "integration",
            "integration_excl", "causal_complexity")
@@ -26,7 +26,9 @@ SCORE_FILTERS = ("persistence", "individuality", "blanket", "integration", "caus
 # world-ignoring observers (a), blanket admits mostly frozen streams (b). Still computed and
 # reported (README section 5.4), but not counted toward hypothesis verdicts.
 DEPRECATED_FILTERS = ("persistence", "blanket")
-METRICS_VERSION = 2   # 2: adds aligned-MI intersubjectivity (xmi_adm, xmi_base)
+METRICS_VERSION = 3   # 2: adds aligned-MI intersubjectivity (xmi_adm, xmi_base)
+                      # 3: world_stats adds translation period / dynamical richness (README 3b.7 A1)
+TPERIOD_SCAN = 512    # translation periods are recorded up to this; dyn_rich uses cfg.dyn_pmax
 
 # classification conventions (fixed before seeing results; see README)
 TRIVIAL_H1 = 0.1        # bits: a stream with less marginal entropy than this has no variety
@@ -280,5 +282,9 @@ def world_stats(st, cfg, cs) -> dict:
     reg = st[cfg.T0:cfg.T0 + cfg.T].astype(np.int64)
     blocks = (np.roll(reg, 1, axis=1) * 4 + reg * 2 + np.roll(reg, -1, axis=1)).ravel()
     p2 = float(np.mean(np.all(reg[2:] == reg[:-2], axis=1)))
+    tp = translation_period(st[cfg.T0:cfg.T0 + cfg.T], TPERIOD_SCAN)
+    pmax = getattr(cfg, "dyn_pmax", 16)
     return dict(density=float(reg.mean()), block_entropy=float(info.entropy(blocks) / 3.0),
-                period2_fraction=p2, n_causal_states=int(cs.n_states))
+                period2_fraction=p2, n_causal_states=int(cs.n_states),
+                tperiod=None if tp is None else tp[0], tshift=None if tp is None else tp[1],
+                dyn_rich=bool(tp is None or tp[0] > pmax))

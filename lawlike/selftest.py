@@ -14,7 +14,8 @@ from .causal import CausalStates
 from .bootstrap import ClusterBootstrap
 from .config import get_preset
 from .experiment1 import law_metrics
-from .worlds import build_ic, rule_representatives, simulate
+from .worlds import (build_ic, complement, make_world_list_2a, reflect, rule_representatives, simulate,
+                     translation_period)
 
 FAILS = []
 
@@ -56,6 +57,45 @@ def main():
     rng2 = np.random.default_rng(2)
     check("normalised aligned MI: a copy ~ 1, independent streams ~ 0",
           info.mi_norm_debiased(x, x, rng2) > 0.95 and abs(info.mi_norm_debiased(x, y, rng2)) < 0.02)
+
+    print("dynamical richness (README 3b.7 A1)")
+    rng3 = np.random.default_rng(3)   # own generator: earlier checks keep their draws
+    ic = rng3.integers(0, 2, 128, dtype=np.uint8)
+    check("identity and shift on a random IC are translation-periodic",
+          translation_period(simulate(204, ic, 200), 16) == (1, 0)
+          and translation_period(simulate(170, ic, 200), 16) == (1, -1)
+          and translation_period(simulate(240, ic, 200), 16) == (1, 1))
+    check("a homogeneous blinker is translation-periodic", translation_period(simulate(1, np.zeros(64, np.uint8), 50), 16) == (2, 0))
+    check("rule 30 and rule 110 on a random IC are not", translation_period(simulate(30, ic, 400)[100:], 16) is None
+          and translation_period(simulate(110, ic, 400)[100:], 16) is None)
+    glider = simulate(170, build_ic("embed", "1101", 64), 50)
+    check("a lone translating pattern is translation-periodic", translation_period(glider, 16) is not None)
+
+    print("Phase 2a world list (README 3b.6)")
+    x0 = rng3.integers(0, 2, 64, dtype=np.uint8)
+    check("complement symmetry: comp(r) on ~x is ~(r on x)",
+          all(np.array_equal(simulate(complement(r), 1 - x0, 40), 1 - simulate(r, x0, 40)) for r in (18, 30, 54, 110)))
+    check("complement of an embed-in-zeros seed is not an embed-in-zeros seed (why README 3b.6 runs it)",
+          not np.array_equal(1 - build_ic("embed", "101", 16), build_ic("embed", "010", 16)))
+    from dataclasses import replace as _replace
+    c2 = _replace(get_preset("smoke2a"), exclude_programs_from=(), rules="all", ic_max_len=6)
+    w2 = make_world_list_2a(c2)
+    simp = [w for w in w2 if w.arm == "simplicity"]
+    reps = rule_representatives()
+    tot = {}
+    for w in simp:
+        tot[w.rule] = tot.get(w.rule, 0.0) + w.weight
+    check("2a simplicity weights sum to 1", abs(sum(tot.values()) - 1) < 1e-9)
+    check("2a class weight is proportional to class size (seed prior identical per rule)",
+          max(abs(tot[r] - reps[r] / 256) for r in reps) < 1e-9)
+    check("2a runs complement-orbit embed worlds exactly for non-self-complementary classes",
+          {w.rule for w in simp if w.sim_rule >= 0} == {r for r in reps if complement(r) not in {r, reflect(r)}})
+    long_seeds = {}
+    for w in simp:
+        if len(w.seed_bits) > c2.ic_exact_len:
+            long_seeds.setdefault(len(w.seed_bits), {}).setdefault(w.rule, set()).add(w.seed_bits)
+    differs = any(len({frozenset(v) for v in d.values()}) > 1 for d in long_seeds.values())
+    check("2a sampled seeds differ between rules (nested, not crossed)", differs)
 
     print("cluster bootstrap")
     # crossed design: 30 rules all run on the same 2 sampled seeds; the seed effect is large,

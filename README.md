@@ -179,6 +179,49 @@ Each one gets a verdict under M_A (primary) and M_B (sensitivity), in both co-pr
   - the order is `smoke`, then `quick` (to check compute), then a run the size of `full`.
 - **Exit for 2a:** every one of H1–H7 has a verdict under M_A and M_B in both co-primary analyses, plus a table of what changed relative to Phase 1.
 
+### 3b.7 Amendments (pre-registered 2026-11-09, after the 2a preview, before the confirmation run)
+The 2a preview (`results/full/report_preview2a.md`) exposed one design flaw, and the review raised several cheap checks. These amendments are **post hoc relative to the preview** (NOTES.md, 2026-11-09). The confirmation run is disjoint from Phase 1 by construction (§3b.6), so it is fresh data for all of them. Where an amendment conflicts with §3b.1–3b.6, the amendment wins. The original text stays as the record.
+
+**A1. Dynamical richness replaces spatial richness as a co-primary analysis.**
+- *Why:* the spatial criterion (3-block entropy ≥ 0.5) counts shifts and the identity on a long seed as "rich". Under M_B, 99% of rich-world weight was rules 170, 204, 15 and 51. In the Phase 1 uniform arm, 63% of weight was rich but repeated with translation period ≤ 4.
+- *Definition:* a world is **dynamically rich** if its analysed window (steps T0 … T0+T) has no translation period p ≤ 16. That is, no p ≤ 16 and shift |s| ≤ p with x[t+p] = roll(x[t], s) for every t (`worlds.translation_period`). The test excludes fixed points, blinkers, shifts, the identity, and a lone glider moving through empty space. It keeps nested and additive patterns, evolving localised structures, and chaos. Noise worlds always count as rich, as before.
+- *How the cutoff was chosen:* from world properties only, with no outcome metric consulted. On the Phase 1 `full` worlds, no translation period falls between 17 and 64; the next group, at 65–256, is the additive rules 105 and 150. So 16 sits in a natural gap.
+- *Co-primary analyses are now all worlds and dynamically rich worlds.* The spatial version (§3b.4) is reported as secondary, for continuity with Phase 1.
+- *If a prior puts less than 2% of an arm's weight on dynamically rich worlds,* that analysis is reported but flagged as resting on a sliver of the prior. In the preview, M_B puts about 0.3% there. That sliver is itself a result about M_B.
+
+**A2. H6 gets a paired, dynamical version (H6d).**
+- *H6 stays as written.* It uses spatial richness and the fixed Phase 1 share of 0.88.
+- *H6d:* (share of M_A simplicity weight in non-dynamically-rich worlds) − (the same share under the Phase 1 rule weights, on the same worlds) > 0, using a paired cluster-bootstrap interval. Falsified if the interval lies below 0.
+- *Disclosed in advance:* on the preview worlds the point estimate is negative (0.914 vs 0.925). The prediction is registered knowing it currently points the wrong way.
+
+**A3. Radius is priced, not capped: report the truncation.**
+- *2a sensitivity M_A\*:* M_A summed over programs at **every** radius that compute the ECA. At r ≥ 2 that means:
+  - totalistic tables that are constant (they reach rules 0 and 255);
+  - outer-totalistic tables that read only the centre (rules 0, 255, 204, 51);
+  - general tables (every ECA, about 2⁻³⁷ each).
+  This changes a few class weights by about 6%. It is reported next to M_A as a robustness row and does not get its own verdicts.
+- *2b, before it runs:* the prior weight of programs above the largest simulated radius is reported per family. If it exceeds 5% of the machine's total weight, the report says the cutoff could matter, and 2b is not described as covering "the rule space".
+
+**A4. Influence check: leave one rule class out.** For each of the headline verdicts (A6), recompute after dropping each of the 88 rule classes in turn. A verdict that changes when any single class is dropped is reported as **fragile (class k)**. This costs nothing to compute and answers "is this verdict just rules 105 and 150?"
+
+**A5. Fixed-rule intervals alongside.** Every headline contrast also gets a `--fixed-rules` interval: the 88 classes taken as the whole population, not as a sample of possible dynamics. The two intervals answer different questions ("these rules" vs "rules like these"). The superpopulation interval stays the one that decides verdicts (§3b.4).
+
+**A6. Headline vs secondary, to limit the garden of forking paths.**
+- *Headline:* H1 and H7a/b under M_A, in the two co-primary analyses (A1), SSA. That is 6 verdicts, each with its A4 fragility label and A5 fixed-rule interval.
+- *Secondary, reported in full:* everything else (M_B, M_A\*, SIA, spatial-rich, H2–H6d, all filters).
+- *Rule for the write-up:* the 2a summary sentence may only cite headline verdicts.
+
+**A7. Finite-size check.**
+- *Which worlds:* the highest-weight dynamically rich worlds in the M_A simplicity arm, taken until they cover 50% of that arm's dynamically rich weight, capped at 40 worlds.
+- *What is run:* each is re-run at 2N and 2T, with T0 and the observer grid scaled to match.
+- *What is reported:* per world, lawful_nt for each counted filter at both sizes, plus the share of these worlds whose lawful_nt moves by more than 0.1. If that share exceeds one third, every rich-world verdict carries a finite-size caveat.
+- *Cost:* about 1–2 CPU-hours.
+
+**A8. Confirmed means confirmed on fresh programs too** (added 2026-11-10, before `quick2a`).
+- *Why:* about 79% of `full2a`'s simplicity weight is enumerated short-seed programs that Phase 1 already ran. They are deterministic, so they are the same worlds. A1–A7 were designed after looking at those worlds, and by §5.1 a change that acts mainly through them cannot be confirmed by re-running them.
+- *Rule:* a headline verdict (A6) is **confirmed** only if it is SUPPORTED both on all programs and on fresh programs alone. Fresh programs are the simplicity programs that appear in neither Phase 1 `quick` nor Phase 1 `full`, checked in code. The headline table shows both columns.
+- *Note:* H7b uses only uniform-arm worlds, which are all new random ICs, so its two columns agree by construction.
+
 ---
 
 ## 4. Running it
@@ -190,6 +233,10 @@ python -m lawlike.run --preset smoke      # ~1 min: pipeline works end to end (r
 python -m lawlike.run --preset quick      # ~10-25 min: first real look
 python -m lawlike.run --preset full       # ~1.5-3 h: press go, walk away
 python -m lawlike.run --preset deep       # overnight: once full says it's worth it
+
+# Phase 2a confirmation (README 3b.6, 3b.7): smoke2a, then quick2a (compute check), then full2a
+python -m lawlike.run --preset full2a     # ~2.5 h on 16 cores; writes report.md and report_2a.md
+python -m lawlike.size_check results/full2a   # A7 finite-size check, ~1-2 CPU-hours
 ```
 
 Times assume a 4–8 core laptop (it uses all cores but one; override with `--workers`). On the dev machine, the cost was about 1.7 s/world for `quick` and 8 s/world for `full`, per core. The Phase 1 `full` run on a 16-thread machine measured 17.6 s/world (21 CPU-hours), so budget for that.
@@ -257,6 +304,10 @@ lawlike/
   run.py            parallel, resumable runner
   analyze.py        aggregation, hypothesis verdicts, plots; --exclude-programs-from for disjointness
   bootstrap.py      cluster bootstrap matched to the sampling design (rules x sampled seeds)
+  rule_priors.py    Phase 2 rule priors: phase1 (uniform), M_A (family table), M_B (min Boolean formula)
+  preview2a.py      Phase 2a preview: Phase 1 results reweighted under M_A / M_B (§3b.6)
+  analyze2a.py      Phase 2a analysis: priors x analyses, headline, fragility, fixed-rule intervals (§3b.7)
+  size_check.py     Phase 2a finite-size check (§3b.7 A7)
   inspect_world.py  the microscope
   selftest.py       Phase 0 checks
 ```

@@ -171,7 +171,7 @@ def analyze(out_dir: str, exclude_from: str | None = None, resample_rules: bool 
     for i, r in enumerate(rows):
         r["_i"] = i
     boot = ClusterBootstrap([r["world"] for r in rows], ic_exact_len, np.random.default_rng(0),
-                            resample_rules=resample_rules)
+                            resample_rules=resample_rules, nested=cfg.get("seed_mode") == "per_rule")
     counts = {a: sum(r["world"]["arm"] == a for r in rows) for a in ARMS}
 
     # ---- main table

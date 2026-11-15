@@ -94,6 +94,28 @@ def simulate(rule: int, ic: np.ndarray, steps: int, flip: tuple[int, int] | None
     return out
 
 
+def translation_period(reg: np.ndarray, pmax: int) -> tuple[int, int] | None:
+    """Smallest (p, s), 1 <= p <= pmax, |s| <= p, with reg[t + p] == roll(reg[t], s) for every t.
+
+    None if there is none: the region is not a pattern that just repeats or translates with
+    a short period. Covers fixed points, blinkers, shifts and the identity rule on any seed.
+    """
+    T, N = reg.shape
+    r0 = np.ascontiguousarray(reg[0]).tobytes()
+    hay = r0 + r0
+    for p in range(1, min(pmax, T - 1) + 1):
+        target = np.ascontiguousarray(reg[p]).tobytes()
+        k = hay.find(target)
+        while 0 <= k < N:
+            s = (-k) % N
+            if s > N // 2:
+                s -= N
+            if abs(s) <= p and np.array_equal(reg[p:], np.roll(reg[:-p], s, axis=1)):
+                return p, s
+            k = hay.find(target, k + 1)
+    return None
+
+
 def noise_spacetime(steps: int, N: int, rng: np.random.Generator) -> np.ndarray:
     return rng.integers(0, 2, size=(steps, N), dtype=np.uint8)
 
@@ -131,12 +153,19 @@ class World:
     L_ic: float          # description length of the IC (bits); nan for uniform/noise
     weight: float        # prior weight, normalised within the arm
     rng_seed: int
+    sim_rule: int = -1   # rule actually simulated, if not `rule` (complement orbit; Phase 2a)
+
+    @property
+    def run_rule(self) -> int:
+        return self.rule if self.sim_rule < 0 else self.sim_rule
 
     def to_dict(self) -> dict:
         return dict(self.__dict__)
 
 
 def make_world_list(cfg) -> list[World]:
+    if getattr(cfg, "seed_mode", "crossed") == "per_rule":
+        return make_world_list_2a(cfg)
     rng = np.random.default_rng(cfg.seed)
     reps = rule_representatives()
     if cfg.rules == "all":
@@ -206,6 +235,110 @@ def realise(world: World, cfg) -> tuple[np.ndarray, np.ndarray, tuple[int, int]]
         ic = rng.integers(0, 2, size=cfg.N, dtype=np.uint8)
     else:
         ic = build_ic(world.ic_kind, world.seed_bits, cfg.N)
-    st = simulate(world.rule, ic, steps)
-    pert = simulate(world.rule, ic, steps, flip=(t_flip, x_flip))
+    st = simulate(world.run_rule, ic, steps)
+    pert = simulate(world.run_rule, ic, steps, flip=(t_flip, x_flip))
     return st, pert, (t_flip, x_flip)
+
+
+# ----------------------------------------------------------------------------- Phase 2a world list
+
+def reflection_orbit(rule: int) -> set[int]:
+    return {rule, reflect(rule)}
+
+
+def phase1_program_keys(dirs) -> set:
+    """(rule, ic_kind, seed_bits) of every simplicity-arm world in earlier result directories."""
+    import json
+    import os
+    keys = set()
+    for d in dirs:
+        path = os.path.join(d, "results.jsonl")
+        if not os.path.exists(path):
+            raise SystemExit(f"exclude_programs_from: {path} not found (needed to keep the run disjoint)")
+        with open(path) as f:
+            for line in f:
+                if line.strip():
+                    w = json.loads(line)["world"]
+                    if w["arm"] == "simplicity":
+                        keys.add((w["rule"], w["ic_kind"], w["seed_bits"]))
+    return keys
+
+
+def make_world_list_2a(cfg, return_info: bool = False):
+    """Phase 2a confirmation design (README 3b.6).
+
+    Differences from make_world_list:
+      * long seeds are sampled independently for each rule (seed clusters nest within rules)
+        and oversampled (cfg.ic_per_len_long per length);
+      * sampled seeds never repeat a simplicity-arm program from cfg.exclude_programs_from;
+        the excluded share of each (rule, length) is returned for the report. The sampled
+        seeds stand in for every seed of their length (importance weight 2^len / m);
+      * complement approximation removed: a class is the union of the reflection orbit of
+        its representative r and that of complement(r). Tile seeds are exact under the
+        class weight (the complement of a tiled seed is a tiled seed of the same length), so
+        they are run once under r. Embed seeds are run under r with weight |orbit(r)|/256
+        and, when complement(r) is in a different orbit, also under that orbit's smallest
+        rule with weight |orbit(comp r)|/256.
+    Every world keeps `rule` = class representative, so rule clusters and rule priors work
+    unchanged; `sim_rule` is the rule actually simulated.
+    """
+    reps = rule_representatives()
+    rule_list = list(reps) if cfg.rules == "all" else sorted({rep_of(int(r)) for r in cfg.rules})
+    excluded = phase1_program_keys(cfg.exclude_programs_from) if cfg.exclude_programs_from else set()
+    m_long = cfg.ic_per_len_long or cfg.ic_per_len
+    excl_info = {}   # (rule, len) -> share of seeds excluded
+    raw: dict = {}
+    for r in rule_list:
+        rr = np.random.default_rng([cfg.seed, r])
+        orb = reflection_orbit(r)
+        comp = complement(r)
+        comp_rule = -1 if comp in orb else min(reflection_orbit(comp))
+        w_tile = reps[r] / 256.0
+        w_embed = len(orb) / 256.0
+        w_comp = (reps[r] - len(orb)) / 256.0
+        for ell in range(1, cfg.ic_max_len + 1):
+            n_all = 2 ** ell
+            if ell <= cfg.ic_exact_len:
+                seeds, imp = list(range(n_all)), 1.0
+            else:
+                pool = [sv for sv in range(n_all)
+                        if not any((r, k, format(sv, f"0{ell}b")) in excluded for k in ("tile", "embed"))]
+                excl_info[(r, ell)] = 1.0 - len(pool) / n_all
+                m = min(m_long if ell >= cfg.ic_long_from else cfg.ic_per_len, len(pool))
+                seeds = [int(x) for x in rr.choice(pool, size=m, replace=False)] if m else []
+                imp = n_all / m if m else 0.0
+            L = ic_description_length(ell)
+            for sv in seeds:
+                bits = format(sv, f"0{ell}b")
+                progs = [("tile", r, -1, w_tile), ("embed", r, -1, w_embed)]
+                if comp_rule >= 0:
+                    progs.append(("embed", r, comp_rule, w_comp))
+                for kind, rep, sim, wr in progs:
+                    key = (rep, sim, build_ic(kind, bits, cfg.N).tobytes())
+                    w = wr * (2.0 ** -L) * imp
+                    if key in raw:
+                        ent = raw[key]
+                        ent["w"] += w
+                        if L < ent["L"]:
+                            ent.update(kind=kind, bits=bits, L=L)
+                    else:
+                        raw[key] = dict(rule=rep, sim=sim, kind=kind, bits=bits, L=L, w=w)
+    rng = np.random.default_rng([cfg.seed, 9999])
+    Z = sum(e["w"] for e in raw.values())
+    worlds: list[World] = []
+    for e in raw.values():
+        tag = f"r{e['rule']}" + (f"c{e['sim']}" if e["sim"] >= 0 else "")
+        worlds.append(World(f"simp-{tag}-{e['kind']}-{e['bits']}", "simplicity", e["rule"], reps[e["rule"]],
+                            e["kind"], e["bits"], float(e["L"]), e["w"] / Z, int(rng.integers(2**31)),
+                            sim_rule=e["sim"]))
+    Zu = sum(reps[r] for r in rule_list) * cfg.n_uniform
+    for r in rule_list:
+        for i in range(cfg.n_uniform):
+            worlds.append(World(f"unif-r{r}-{i}", "uniform", r, reps[r], "uniform", "", float("nan"),
+                                reps[r] / Zu, int(rng.integers(2**31))))
+    for i in range(cfg.n_noise):
+        worlds.append(World(f"noise-{i}", "noise", -1, 1, "noise", "", float("nan"),
+                            1.0 / cfg.n_noise, int(rng.integers(2**31))))
+    if return_info:
+        return worlds, excl_info
+    return worlds

@@ -12,7 +12,7 @@ Each bootstrap replicate draws, independently:
                   arms, so simplicity - uniform contrasts are paired. Pass resample_rules=False
                   to treat the enumerated rule set as the whole population.
   sampled seeds : within each seed-length stratum, resample the sampled seeds with
-                  replacement. Enumerated seeds (length <= ic_exact_len) are the whole
+                  replacement (nested=True, Phase 2a: within each (rule, length) stratum). Enumerated seeds (length <= ic_exact_len) are the whole
                   population and stay fixed.
   uniform ICs   : within each rule, resample its uniform-arm replicates.
   noise worlds  : resample i.i.d.
@@ -28,17 +28,24 @@ import numpy as np
 B = 400
 
 
-def seed_cluster(world: dict, ic_exact_len: int):
-    """(stratum, key) of the sampled seed a simplicity world was built from, or None if enumerated."""
+def seed_cluster(world: dict, ic_exact_len: int, nested: bool = False):
+    """(stratum, key) of the sampled seed a simplicity world was built from, or None if enumerated.
+
+    crossed (Phase 1): one cluster per seed, shared by every rule, stratified by length.
+    nested (Phase 2a): seeds were drawn per rule, so the cluster is (rule, seed) within the
+    stratum (rule, length).
+    """
     bits = world["seed_bits"]
     if len(bits) <= ic_exact_len:
         return None
+    if nested:
+        return (world["rule"], len(bits)), (world["rule"], bits)
     return len(bits), bits
 
 
 class ClusterBootstrap:
     def __init__(self, worlds: list[dict], ic_exact_len: int, rng: np.random.Generator,
-                 resample_rules: bool = True, n_boot: int = B):
+                 resample_rules: bool = True, n_boot: int = B, nested: bool = False):
         n = len(worlds)
         M = np.ones((n_boot, n))
         arm = np.array([w["arm"] for w in worlds])
@@ -53,13 +60,15 @@ class ClusterBootstrap:
             M[:, ok] *= counts[:, cols[ok]]
 
         # sampled seeds: crossed with rules, resampled within length strata
-        strata: dict[int, list[str]] = {}
+        strata: dict = {}
         for w in worlds:
             if w["arm"] == "simplicity":
-                c = seed_cluster(w, ic_exact_len)
+                c = seed_cluster(w, ic_exact_len, nested)
                 if c is not None and c[1] not in strata.setdefault(c[0], []):
                     strata[c[0]].append(c[1])
-        self.single_seed_strata = sorted(k for k, v in strata.items() if len(v) < 2)
+        single = [k for k, v in strata.items() if len(v) < 2]
+        self.single_seed_strata = sorted({k[1] for k in single} if nested else single)
+        self.n_single, self.n_strata = len(single), len(strata)
         seed_count = {}
         for ell, keys in strata.items():
             cnt = _counts(rng, n_boot, len(keys))
@@ -67,7 +76,7 @@ class ClusterBootstrap:
                 seed_count[k] = cnt[:, j]
         for i, w in enumerate(worlds):
             if w["arm"] == "simplicity":
-                c = seed_cluster(w, ic_exact_len)
+                c = seed_cluster(w, ic_exact_len, nested)
                 if c is not None:
                     M[:, i] *= seed_count[c[1]]
 
