@@ -165,6 +165,81 @@ def main():
     cs = CausalStates(cfg.hp, cfg.hf).fit(stn, 10, 290)
     check("pure noise collapses to ~one causal state", cs.n_states <= 2, f"{cs.n_states} states")
 
+    print("seam-free tiling (README 3b.8 A9)")
+    from types import SimpleNamespace
+    from .experiment1 import anticipation, anticipation_gaps
+    from .observers import Extractor
+    from .worlds import World, realise, ring_size
+    base = get_preset("smoke")
+    tw = World("t", "simplicity", 126, 1, "tile", "010", 5.0, 1.0, 1)
+    sf = _replace(base, seam_free=True)
+    st_seam, _, _ = realise(tw, base)
+    st_sf, _, fl = realise(tw, sf)
+    check("a 3-cell tile on a 64-cell ring runs on 63 cells when seam-free", ring_size(tw, sf) == 63
+          and st_sf.shape[1] == 63 and st_seam.shape[1] == 64 and fl[1] < 63)
+    check("the seam-free world keeps the tile's spatial period; the seamed one does not",
+          np.array_equal(st_sf, np.roll(st_sf, 3, axis=1)) and not np.array_equal(st_seam, np.roll(st_seam, 3, axis=1)))
+    full = get_preset("full")      # at smoke size the seamed world's defect dies out on its own
+    reg = slice(full.T0, full.T0 + full.T)
+    check("at N = 256 the seam-free world is translation-periodic; the seamed one is kept alive by its defect",
+          translation_period(realise(tw, _replace(full, seam_free=True))[0][reg], 16) is not None
+          and translation_period(realise(tw, full)[0][reg], 16) is None)
+    ew = World("e", "simplicity", 126, 1, "embed", "011", 5.0, 1.0, 1)
+    check("embed worlds are untouched", np.array_equal(realise(ew, base)[0], realise(ew, sf)[0]))
+
+    print("memory horizons, depth, learning progress (README 3c.2, 3c.4)")
+    rng4 = np.random.default_rng(4)
+    c = info.mixture_codes(per, None, 8, 2)
+    check("the horizon-8 code length is the existing code length", abs(c["by_horizon"][8] - c["total"]) < 1e-9)
+    m = law_metrics(rnd, rnd, 8)
+    check("h^(8) is the existing h", m["hm8"] == m["h"])
+    check("noise: no depth, no learning progress", abs(m["depth"]) < 0.02 and abs(m["gap"]) < 0.02,
+          f"depth={m['depth']:.3f} gap={m['gap']:.3f}")
+    check("a learned periodic stream: no depth beyond its period, no learning progress",
+          abs(mp["gap"]) < 0.02, f"gap={mp['gap']:.3f}")
+    s3 = rng4.integers(0, 2, 4000)
+    flipn = rng4.random(4000) < 0.05
+    for t in range(3, 4000):
+        s3[t] = s3[t - 3] ^ int(flipn[t])
+    m3 = law_metrics(s3, s3, 8)
+    check("a stream with only third-order dependence: h^(2) high, h^(4) low, positive depth",
+          m3["hm2"] > 0.9 and m3["hm4"] < 0.4 and m3["depth"] > 0.5,
+          f"h2={m3['hm2']:.2f} h4={m3['hm4']:.2f} depth={m3['depth']:.2f}")
+    check("...and it is lawful only for an observer who remembers at least three steps",
+          m3["hm1"] / m3["H1"] > 0.5 and m3["hm2"] / m3["H1"] > 0.5 and m3["hm4"] / m3["H1"] <= 0.5)
+
+    print("anticipation (README 3c.3)")
+    big = SimpleNamespace(N=8192, T=4000, T0=10, velocities=((0, 1),))
+    ic = rng4.integers(0, 2, big.N, dtype=np.uint8)
+    st170 = simulate(170, ic, big.T0 + big.T + 4)
+    ex = Extractor(big, st170, None, None, 1)
+    for w in (2, 5):
+        rd = ex.read(1, 1000, w, 0, 1)
+        n = rd["sym"].size
+        ak = {k: info.cmi_debiased(rd["env"][k:], rd["sym"][:n - k], rd["env"][:n - k], rng4)
+              / (info.entropy(info.combine(rd["env"][k:], rd["env"][:n - k])) - info.entropy(rd["env"][:n - k]))
+              for k in (1, 2, 4, 8)}
+        check(f"shift rule, window of {w}: a_k ~ 1/2 for k <= {w} and ~ 0 beyond",
+              all(abs(ak[k] - (0.5 if k <= w else 0.0)) < 0.06 for k in ak),
+              " ".join(f"a{k}={v:.2f}" for k, v in ak.items()))
+    an = anticipation(rd["sym"], rd["env"], rng4)
+    # diary: the downstream boundary at t+k is the upstream boundary at t-(w+1-k), so a two-step
+    # record of inputs holds it only for k = 4 (half of the two boundary cells): mean 1/6
+    check("shift rule, window of 5: anticipation = mean of a_2, a_4, a_8 ~ 1/3; a two-step diary ~ 1/6",
+          abs(an["antic"] - 1 / 3) < 0.05 and abs(an["a1"] - 0.5) < 0.06 and abs(an["diary"] - 1 / 6) < 0.03,
+          f"A={an['antic']:.3f} diary={an['diary']:.3f}")
+    stn = rng4.integers(0, 2, (big.T0 + big.T + 4, 64), dtype=np.uint8)
+    exn = Extractor(SimpleNamespace(N=64, T=1000, T0=10, velocities=((0, 1),)), stn, None, None, 1)
+    A = np.array([anticipation(r_["sym"], r_["env"], rng4)["antic"] for r_ in (exn.read(1, x, 5, 0, 1) for x in range(0, 64, 8))])
+    check("noise world, 5-cell windows over 1000 steps: anticipation ~ 0", abs(A.mean()) < 0.02 and np.abs(A).max() < 0.08,
+          f"mean={A.mean():.3f} max|A|={np.abs(A).max():.3f}")
+    fz = anticipation(np.arange(500) % 7, np.zeros(500, np.int64), rng4)
+    check("a frozen environment offers nothing to anticipate (A = 0)", fz["antic"] == 0.0 and fz["ret4"] == 0.0)
+    obs_ = dict(fam=np.array([1, 1, 1, 1, 2]), w=np.array([2, 2, 2, 3, 2]), s=np.ones(5, int), v=np.zeros(5, int))
+    g = anticipation_gaps(obs_, np.array([0.3, 0.1, 0.2, 0.5, np.nan]))
+    check("the control is the same program at the other positions",
+          np.allclose(g[:3], [0.15, -0.15, 0.0]) and np.isnan(g[3]) and np.isnan(g[4]))
+
     print()
     if FAILS:
         print(f"{len(FAILS)} check(s) FAILED: {FAILS}")

@@ -26,8 +26,9 @@ SCORE_FILTERS = ("persistence", "individuality", "blanket", "integration", "caus
 # world-ignoring observers (a), blanket admits mostly frozen streams (b). Still computed and
 # reported (README section 5.4), but not counted toward hypothesis verdicts.
 DEPRECATED_FILTERS = ("persistence", "blanket")
-METRICS_VERSION = 3   # 2: adds aligned-MI intersubjectivity (xmi_adm, xmi_base)
+METRICS_VERSION = 4   # 2: adds aligned-MI intersubjectivity (xmi_adm, xmi_base)
                       # 3: world_stats adds translation period / dynamical richness (README 3b.7 A1)
+                      # 4: memory horizons, anticipation, depth (README 3c); ring size (3b.8 A9)
 TPERIOD_SCAN = 512    # translation periods are recorded up to this; dyn_rich uses cfg.dyn_pmax
 
 # classification conventions (fixed before seeing results; see README)
@@ -35,6 +36,17 @@ TRIVIAL_H1 = 0.1        # bits: a stream with less marginal entropy than this ha
 LAWFUL_HNORM = 0.5      # stream is "lawful" if the predictor's surprise <= half its variety
 DIVERGE = 0.05          # perturbation changed > 5% of later experiences ("facts changed")
 ROBUST = 0.1            # bits/symbol: old laws still predict the perturbed future ("laws held")
+
+# README 3c (fixed before any world was run with them)
+HORIZONS = (1, 2, 4, 8)         # memory horizons m: the observer's state is its last m readings
+DEPTH_LO = 2                    # depth = h^(2) - h^(K): what memory beyond two steps buys
+ANTIC_LAGS = (2, 4, 8)          # anticipation A = mean of a_k over these lags
+RETAIN_LAGS = (2, 4, 8, 16)     # retention r_k
+ANTIC_MAX_ALPHABET = 32         # anticipation is not estimable for larger state alphabets
+ANTIC_MIN_H = 1e-3              # bits: below this the environment offers nothing to anticipate
+LAW_KEYS = ("H1", "h", "Lambda", "hnorm", "gap", "rgap", "div", "klass", "depth",
+            *(f"hm{m}" for m in HORIZONS))
+ANTIC_KEYS = ("a1", "antic", "diary", *(f"ret{k}" for k in RETAIN_LAGS))
 
 _OBS_CACHE: dict = {}
 _NULL_CACHE: dict = {}
@@ -66,8 +78,65 @@ def law_metrics(sym: np.ndarray, alt: np.ndarray, K: int) -> dict:
         klass = 1
     else:
         klass = 2
-    return dict(H1=H1, h=h, Lambda=max(0.0, H1 - h), hnorm=hnorm, gap=gap, rgap=rgap,
-                div=div, klass=klass)
+    out = dict(H1=H1, h=h, Lambda=max(0.0, H1 - h), hnorm=hnorm, gap=gap, rgap=rgap,
+               div=div, klass=klass)
+    # memory horizons (README 3c.2): h^(m) = code length per symbol under orders 0..m only.
+    # The largest order the coder has is its ceiling, so any m at or above it is h itself.
+    bh = c["by_horizon"]
+    kmax = max(bh)
+    for m in HORIZONS:
+        out[f"hm{m}"] = h if m >= kmax else bh[m] / T
+    out["depth"] = (h if DEPTH_LO >= kmax else bh[DEPTH_LO] / T) - h
+    return out
+
+
+def _lagged_cmi(target: np.ndarray, source: np.ndarray, cond: np.ndarray, rng) -> float:
+    """Debiased I(target; source | cond) / H(target | cond), clipped to [-1, 1]; 0 when the
+    conditional entropy is below ANTIC_MIN_H (nothing there to be informed about)."""
+    hc = info.entropy(info.combine(target, cond)) - info.entropy(cond)
+    if hc < ANTIC_MIN_H:
+        return 0.0
+    return float(np.clip(info.cmi_debiased(target, source, cond, rng) / hc, -1.0, 1.0))
+
+
+def anticipation(sym: np.ndarray, env: np.ndarray, rng: np.random.Generator) -> dict:
+    """README 3c.3. sym = the observer's reading S_t, env = its two boundary cells B_t.
+
+      a_k  = I(S_t ; B_t+k | B_t) / H(B_t+k | B_t)       what the state says about later input
+      antic = mean a_k over ANTIC_LAGS;  a1 = direct coupling, kept apart as a reference
+      diary = the same with (B_t-1, B_t-2) in place of S_t: a two-step external record
+      ret_k = I(S_t ; B_t-k | B_t) / H(B_t-k | B_t)      how long an input stays readable
+    """
+    out = {}
+    n = sym.size
+
+    def a(k):
+        return _lagged_cmi(env[k:], sym[:n - k], env[:n - k], rng)
+
+    out["a1"] = a(1)
+    out["antic"] = float(np.mean([a(k) for k in ANTIC_LAGS]))
+    past = info.combine(env[1:-1], env[:-2])            # (B_t-1, B_t-2) for t = 2 .. n-1
+    out["diary"] = float(np.mean([_lagged_cmi(env[2 + k:], past[:n - 2 - k], env[2:n - k], rng)
+                                  for k in ANTIC_LAGS]))
+    for k in RETAIN_LAGS:
+        out[f"ret{k}"] = _lagged_cmi(env[:n - k], sym[k:], env[k:], rng)
+    return out
+
+
+def anticipation_gaps(obs, antic: np.ndarray) -> np.ndarray:
+    """An observer's anticipation minus the mean over the same program at every other start
+    position in the world (README 3c.3, control). NaN where either side is undefined."""
+    gap = np.full(antic.size, np.nan)
+    groups: dict = {}
+    for i in np.where(np.isfinite(antic))[0]:
+        groups.setdefault((int(obs["fam"][i]), int(obs["w"][i]), int(obs["s"][i]), int(obs["v"][i])), []).append(i)
+    for idx in groups.values():
+        if len(idx) < 2:
+            continue
+        idx = np.array(idx)
+        tot = antic[idx].sum()
+        gap[idx] = antic[idx] - (tot - antic[idx]) / (idx.size - 1)
+    return gap
 
 
 def observer_scores(rd: dict, rng: np.random.Generator) -> dict:
@@ -101,6 +170,7 @@ def observer_scores(rd: dict, rng: np.random.Generator) -> dict:
 
 def process_world(world: World, cfg, out_dir: str | None = None) -> dict:
     rng = np.random.default_rng(world.rng_seed + 7)
+    arng = np.random.default_rng(world.rng_seed + 13)   # README 3c metrics: own stream, as for xrng
     obs = _observers(cfg)
     n_obs = obs["fam"].size
     st, pert, flip = realise(world, cfg)
@@ -113,8 +183,7 @@ def process_world(world: World, cfg, out_dir: str | None = None) -> dict:
     ex = Extractor(cfg, st, lab, cplx, n_lab)
     exp_ = Extractor(cfg, pert, lab_p, None, n_lab)
 
-    cols = {k: np.full(n_obs, np.nan) for k in
-            ("H1", "h", "Lambda", "hnorm", "gap", "rgap", "div", "klass", *SCORE_FILTERS)}
+    cols = {k: np.full(n_obs, np.nan) for k in (*LAW_KEYS, *SCORE_FILTERS, *ANTIC_KEYS)}
     streams: list[np.ndarray] = [None] * n_obs  # type: ignore
 
     for i in range(n_obs):
@@ -142,10 +211,14 @@ def process_world(world: World, cfg, out_dir: str | None = None) -> dict:
             cols[k][i] = v
         for k, v in observer_scores(rd, rng).items():
             cols[k][i] = v
+        if fam in (1, 2) and rd["radix"] ** rd["parts"].shape[1] <= ANTIC_MAX_ALPHABET:
+            for k, v in anticipation(rd["sym"], rd["env"], arng).items():
+                cols[k][i] = v
+    cols["antic_gap"] = anticipation_gaps(obs, cols["antic"])
 
     masks = admissible_masks(obs, cols, cfg.top_q)
     xrng = np.random.default_rng(world.rng_seed + 11)   # own stream: older statistics stay reproducible
-    summary = dict(world=world.to_dict(), world_stats=world_stats(st, cfg, cs),
+    summary = dict(world=world.to_dict(), world_stats=dict(world_stats(st, cfg, cs), ring=int(st.shape[1])),
                    metrics_version=METRICS_VERSION,
                    filters={f: summarise(obs, cols, masks[f], streams, rng, cfg, ex, xrng) for f in FILTERS},
                    jaccard=jaccard(obs["prior"], masks))
@@ -207,10 +280,24 @@ def summarise(obs, cols, mask, streams, rng, cfg, ex=None, xrng=None) -> dict:
         out["lawful_nt_unweighted"] = float(np.mean(k[nt] == 1))
         for name in ("Lambda", "hnorm", "gap", "rgap", "div"):
             out[f"mean_{name}_nt"] = float(np.sum(wn * cols[name][mask][nt]))
+        # README 3c: lawfulness per memory horizon, and depth (learning progress is mean_gap_nt)
+        H1nt = cols["H1"][mask][nt]
+        for m in HORIZONS:
+            out[f"lawful_nt_m{m}"] = float(wn[cols[f"hm{m}"][mask][nt] / H1nt <= LAWFUL_HNORM].sum())
+        out["mean_depth_nt"] = float(np.sum(wn * cols["depth"][mask][nt]))
         fl = (cols["div"][mask][nt] > DIVERGE) & (cols["rgap"][mask][nt] < ROBUST)
         out["facts_change_laws_hold_nt"] = float(wn[fl].sum())
         out["facts_change_nt"] = float(wn[cols["div"][mask][nt] > DIVERGE].sum())
     out["mean_Lambda"] = float(np.sum(w * cols["Lambda"][mask]))
+    # README 3c.3: anticipation over the admitted world-reading observers it can be estimated for
+    g = cols["antic_gap"][mask]
+    est = np.isfinite(g)
+    out["n_antic"] = int(est.sum())
+    if est.any():
+        we = w[est] / w[est].sum()
+        out["antic_gap"] = float(np.sum(we * g[est]))
+        for name in ANTIC_KEYS:
+            out[f"mean_{name}"] = float(np.sum(we * cols[name][mask][est]))
     fam = obs["fam"][mask]
     for j, name in enumerate(FAMILIES):
         out[f"famshare_{name}"] = float(w[fam == j].sum())

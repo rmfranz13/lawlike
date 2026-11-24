@@ -86,7 +86,7 @@ class Extractor:
 
     def _cols(self, x0, v, offsets):
         p, q = self.cfg.velocities[v]
-        return (x0 + (p * self.tt) // q + offsets[None, :]) % self.cfg.N
+        return (x0 + (p * self.tt) // q + offsets[None, :]) % self.st.shape[1]   # the world's own ring (A9)
 
     def read(self, fam: int, x0: int, w: int, v: int, s: int) -> dict:
         """Returns parts (T,w), radix, sym (T,), env (T,), ext (T,), cplx_mean."""

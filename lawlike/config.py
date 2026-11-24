@@ -71,6 +71,8 @@ class Exp1Config:
     exclude_programs_from: tuple = ()
     # translation period up to which a world counts as dynamically trivial (README 3b.7 A1)
     dyn_pmax: int = 16
+    # tile worlds run on a ring their seed length divides (README 3b.8 A9)
+    seam_free: bool = False
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -88,7 +90,7 @@ class Exp1Config:
 
 
 PHASE2_DEFAULTS = dict(seed_mode="crossed", complement_embed=False, ic_per_len_long=0, ic_long_from=4,
-                       exclude_programs_from=(), dyn_pmax=16)
+                       exclude_programs_from=(), dyn_pmax=16, seam_free=False)
 
 
 PRESETS: dict[str, Exp1Config] = {
@@ -125,6 +127,19 @@ PRESETS["smoke2a"] = replace(PRESETS["smoke"], name="smoke2a", ic_max_len=5, ic_
                              ic_per_len_long=2, **_C2A)
 PRESETS["quick2a"] = replace(PRESETS["quick"], name="quick2a", ic_max_len=7, ic_per_len_long=2, **_C2A)
 PRESETS["full2a"] = replace(PRESETS["full"], name="full2a", ic_per_len_long=3, **_C2A)
+# 2a close-out (README 3b.8 A9): the same world list as full2a, tile worlds on seam-free rings
+PRESETS["smoke2a_sf"] = replace(PRESETS["smoke2a"], name="smoke2a_sf", seam_free=True)
+PRESETS["full2a_sf"] = replace(PRESETS["full2a"], name="full2a_sf", seam_free=True)
+
+
+def size_cells(cfg: Exp1Config) -> dict:
+    """README 3b.8 A10: the four size cells, relative to the base (N, T0, T)."""
+    return {
+        "N2": replace(cfg, name=f"{cfg.name}_N2", N=2 * cfg.N, pos_stride=2 * cfg.pos_stride),
+        "late": replace(cfg, name=f"{cfg.name}_late", T0=cfg.T0 + cfg.T),
+        "T2": replace(cfg, name=f"{cfg.name}_T2", T=2 * cfg.T),
+        "NT2": scaled_for_size_check(cfg),
+    }
 
 
 def scaled_for_size_check(cfg: Exp1Config) -> Exp1Config:

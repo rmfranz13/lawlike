@@ -220,12 +220,23 @@ def make_world_list(cfg) -> list[World]:
     return worlds
 
 
+def ring_size(world, cfg) -> int:
+    """Cells in the world's ring. With cfg.seam_free (README 3b.8 A9) a tile world with seed
+    length d runs on d * floor(N / d) cells, so the tiling closes without a defect at the
+    wrap-around. That is a multiple of d and therefore of the tile's primitive period."""
+    if getattr(cfg, "seam_free", False) and world.ic_kind == "tile":
+        d = len(world.seed_bits)
+        return d * (cfg.N // d)
+    return cfg.N
+
+
 def realise(world: World, cfg) -> tuple[np.ndarray, np.ndarray, tuple[int, int]]:
     """Return (spacetime, perturbed spacetime, flip location)."""
     rng = np.random.default_rng(world.rng_seed)
     steps = cfg.T0 + cfg.T + cfg.hf + 1
     t_flip = cfg.T0 + cfg.T // 2
-    x_flip = int(rng.integers(cfg.N))
+    n_ring = ring_size(world, cfg)
+    x_flip = int(rng.integers(cfg.N)) % n_ring   # drawn at the nominal N, as before
     if world.arm == "noise":
         st = noise_spacetime(steps, cfg.N, rng)
         pert = st.copy()
@@ -234,7 +245,7 @@ def realise(world: World, cfg) -> tuple[np.ndarray, np.ndarray, tuple[int, int]]
     if world.arm == "uniform":
         ic = rng.integers(0, 2, size=cfg.N, dtype=np.uint8)
     else:
-        ic = build_ic(world.ic_kind, world.seed_bits, cfg.N)
+        ic = build_ic(world.ic_kind, world.seed_bits, n_ring)
     st = simulate(world.run_rule, ic, steps)
     pert = simulate(world.run_rule, ic, steps, flip=(t_flip, x_flip))
     return st, pert, (t_flip, x_flip)

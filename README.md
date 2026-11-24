@@ -222,6 +222,106 @@ The 2a preview (`results/full/report_preview2a.md`) exposed one design flaw, and
 - *Rule:* a headline verdict (A6) is **confirmed** only if it is SUPPORTED both on all programs and on fresh programs alone. Fresh programs are the simplicity programs that appear in neither Phase 1 `quick` nor Phase 1 `full`, checked in code. The headline table shows both columns.
 - *Note:* H7b uses only uniform-arm worlds, which are all new random ICs, so its two columns agree by construction.
 
+### 3b.8 Closing out 2a (pre-registered 2026-11-14, signed off the same day, before any seam-free run)
+These amendments are **post hoc relative to `full2a` and its A7 size check** (NOTES.md, 2026-11-11). What is already known when this is written: re-simulating the dynamically rich tile worlds on a ring their tile divides made 243 of 258 translation-periodic (0.236 of the M_A simplicity arm's dynamically rich weight). No lawfulness, filter or hypothesis statistic has been computed on a seam-free world.
+
+**A9. Seam-free tiling.**
+- *Why:* a tiled seed whose length d does not divide N leaves one defect at the wrap-around. On an infinite lattice the world is periodic; on our ring the defect alone can keep it "dynamically rich".
+- *Definition:* a tile world with seed length d is simulated on a ring of N_w = d·⌊N/d⌋ cells. (N_w is a multiple of d, and so of the tile's primitive period.) At N = 256, d ∈ {1, 2, 4, 8} is unchanged and d ∈ {3, 5, 6, 7, 9, 10} runs on 250–255 cells. One common N is not possible: lcm(1…10) = 2520.
+- *What stays fixed:* the world list, weights, RNG seeds, observer set, description lengths and observer priors, all computed at the nominal N. Footprints wrap modulo N_w. The flip position is drawn as before and taken modulo N_w. Embed, uniform and noise worlds are not changed.
+- *Run:* preset `full2a_sf`. 1774 of the 7150 worlds are tile worlds with d ∤ 256 and change; the other 5376 are the same deterministic worlds as `full2a`. All 7150 are re-run (about 2.5 h) so that every row also carries the §3c metrics, and the code checks that every pre-existing field of the 5376 unchanged worlds equals its `full2a` value exactly.
+- *Dynamical richness:* A1's cutoff (translation period ≤ 16) is not changed. A seam-free tile world has at most 2^d configurations, so it is eventually periodic with period ≤ 1024, and some with d ≥ 5 may legitimately have a period above 16. The report gives the distribution of tile-world periods and says whether the 17–64 gap that motivated the cutoff is still empty. The cutoff stays at 16 either way.
+- *Verdicts:* `analyze2a` is run on `full2a_sf` under A1–A8 unchanged. **These are the 2a verdicts of record.** The `full2a` verdicts stay in the record, labelled "seamed". A headline verdict that differs between the two is reported as **seam-sensitive**. A8 still applies: confirmed means supported on all programs and on fresh programs alone.
+
+**A10. Size checks, separated.** A7 doubled N and T together, so it could not tell a larger world from a coder given twice the data.
+- *Which worlds:* A7's rule (highest-weight dynamically rich worlds of the M_A simplicity arm, to 50% of that weight, at most 40), applied to `full2a_sf`.
+- *What is run*, relative to the base (N, T0, T):
+
+  | cell | N | T0 | T | observer stride | isolates |
+  |---|---|---|---|---|---|
+  | `N2` | 2N | T0 | T | 2× | ring size, with the same amount of data |
+  | `late` | N | T0 + T | T | 1× | epoch: the same amount of data, taken later |
+  | `T2` | N | T0 | 2T | 1× | twice the data (it spans both epochs) |
+  | `NT2` | 2N | 2T0 | 2T | 2× | A7 as it was run, for continuity |
+
+  Tile worlds use the seam-free ring for the cell's nominal N.
+- *"Moves"* keeps A7's meaning: lawful_nt changes by more than 0.1 under any counted filter, and defined ↔ undefined counts as a move. The direction of every move is reported.
+- *Caveats, each triggered above one third of the checked worlds, with consequences fixed now:*
+  - **ring-size** (`N2` moves): rich-world verdicts are described as holding "on a 256-cell ring", and 2b treats N as a design factor.
+  - **epoch** (`late` moves): the world is not stationary over the window. Reported; nothing is changed.
+  - **data-length** (`T2` differs by more than 0.1 from *both* base and `late`, under any counted filter): the lawful/noisy classification depends on stream length, which is a fault of the instrument. A length-robust lawfulness measure is then pre-registered before 2b. Re-analysing 2a under that measure does not count as confirmation.
+- *Known in advance:* at the base size an embedded seed's light cone meets itself at t = N/2 = T0, so the whole analysed window is after the wrap. In `N2` the wrap happens at step 256, inside the window. For embed worlds `N2` therefore compares "wrapped throughout" with "unwrapped for the first eighth".
+- *Cost:* about 2–3 CPU-hours.
+
+**A11. Stopping rule.** After A9 and A10, 2a is closed whatever the verdicts are. No further amendments to 2a; new ideas go to later phases.
+
+*In hypergraph terms:* the seam is a boundary-condition artefact, a defect that exists only because space was closed up at a size incommensurate with the initial pattern. The hypergraph analogue is structure created by how a finite initial hypergraph is closed or truncated, not by the rule. `N2`, `late` and `T2` correspond to a larger initial hypergraph, a later slice of the causal graph, and a longer run of updates. The analogy breaks at "later": without a global clock it needs a choice of foliation.
+
+---
+
+## 3c. Memory-carrying observers; self-modelling and open-endedness as outcomes (pre-registered 2026-11-14, signed off the same day)
+
+Written before any of these quantities has been computed on any world.
+
+### 3c.1 Why
+- **Müller's observer state** is a finite binary string holding everything the observer has, memory included. In the postulates he actually uses (3.2) it grows by one bit per step and nothing is forgotten; the version with forgetting (3.1) is left unformalised. An observer inside a world is a *locator function* f(ω_t) of the world's present state whose output is that growing string (Def. 4.5). His agreement theorem (5.2) needs an observer who is "old enough" and "remembers forever"; a short state gives a "probabilistic zombie" (Obs. 5.3).
+- **Our instruments disagree with each other about this.** The lawfulness coder predicts each reading from up to 8 earlier readings, so it treats the observer as carrying memory. Every admission filter scores the momentary reading S_t alone. Neither choice was ever stated.
+- **Two outcomes are added as checks, not as admission criteria.** *Self-modelling*: does the observer's state carry information about its environment's future? *Open-endedness*: does its experience keep producing structure worth learning? Used as filters, both would decide H1 by construction: an observer can only anticipate a predictable input, and an unpredictability filter selects against lawfulness. So neither counts toward admission.
+
+### 3c.2 The memory-horizon observer
+- *Definition:* every existing observer gets a horizon m ∈ {1, 2, 4, 8}. Its state at time t is its last m readings, (s_t−m+1, …, s_t). m = 1 is the momentary observer. m = 8 is the existing instrument (K = 8) and is our ceiling on "remembers everything"; Müller's unbounded state is not reached.
+- *Experience at horizon m:* h^(m) is the per-symbol code length under the KT mixture restricted to Markov orders 0…m (order prior ∝ 2^−(k+1), renormalised). Classes use the existing thresholds: trivial if H1 < 0.1 bits, lawful if h^(m)/H1 ≤ 0.5. The m = 8 column must reproduce the existing h exactly (checked in code).
+- *What the coder's counts are:* the KT counts accumulate over the whole stream. They stand in for the measure P(next state | state), which in Müller's theory is not something the observer learns. Only the context length is the observer's memory.
+- *Description length:* 1 bit (bounded or unbounded) + EliasGamma(m), so 2, 4, 6 and 8 bits. **Results are reported per horizon; no verdict rests on this prior.** The horizon-marginal figure is secondary.
+- *Admission is unchanged.* Filters keep scoring the momentary footprint: they are criteria on the observer as a physical system, a function of the present world state like Müller's locator. Filter scores on m-step states are not estimable at our stream lengths (the state alphabet grows as |S|^m).
+- *Stated limitation — the memory is external.* A record of past readings is a function of the world's history, not of its present state, so the world is not required to store it. A description-length prior charges nothing for that storage. Müller's locator must read the memory out of the present state. §3c.3 measures how much of it is physically there.
+
+### 3c.3 Outcome: anticipation (the self-modelling check)
+Notation: S_t is the observer's footprint reading and B_t its two boundary cells, both in its co-moving frame.
+- *Statistic:* a_k = I(S_t ; B_t+k | B_t) / H(B_t+k | B_t), by the same debiased plug-in estimator as `individuality`; a_k = 0 when the denominator is below 10⁻³ bits (a frozen environment offers nothing to anticipate), and a_k is clipped to [−1, 1] so that a near-zero denominator cannot dominate a mean. **Anticipation A = mean of a_k over k ∈ {2, 4, 8}.** It is `individuality` with the target swapped: what the observer's state says about its environment's future beyond what the environment's present says.
+- *No decoder is chosen.* Mutual information is unchanged by relabelling states, so the "which map counts as encoding" problem does not arise.
+- *Control:* the same observer program at every other start position in the same world. An observer's gap is its A minus the mean A of those copies. In an ordered world every window anticipates its surroundings; the gap asks whether the place a filter picked is special.
+- *Per world:* the prior-weighted mean gap over the admitted, world-reading observers. Verdicts follow the H5 pattern: simplicity gap − noise gap.
+- *Estimable only for state alphabets ≤ 32:* raw windows and coarse observers. Causal-state observers are reported as not estimable.
+- *Known weaknesses:*
+  - **Influence is not separated from modelling.** S_t physically affects later boundary cells, so A is positive for anything coupled to its surroundings. a_1, which is direct coupling in a radius-1 rule, is reported separately as a reference.
+  - **Small samples.** About 1000 samples over up to 512 joint cells, the same regime as `individuality`. Small differences are noise. A's dependence on stream length is read from the A10 cells.
+- *Secondary, reported without verdicts:*
+  - *diary benchmark* d_k = I(B_t−1, B_t−2 ; B_t+k | B_t) / H(B_t+k | B_t): what a two-step external record of inputs would add. Comparing A with it asks whether the observer's body holds what a diary would.
+  - *retention* r_k = I(S_t ; B_t−k | B_t) / H(B_t−k | B_t) for k ∈ {2, 4, 8, 16}: how long an input stays readable in the footprint.
+
+### 3c.4 Outcome: open-endedness
+Two numbers per stream, both from the existing coder:
+- **learning progress** = the existing `gap`: bits per symbol saved in the second half by continuing to learn instead of freezing the model at the midpoint. Zero for noise (nothing to learn) and for a periodic stream (already learned).
+- **depth** = h^(2) − h^(8): bits per symbol that memory beyond two steps buys. Zero for noise and for anything a two-step memory already predicts.
+
+Both are reported next to lawfulness as a second axis. Neither is a filter, and no class threshold is set.
+*Known weakness:* learning progress cannot tell genuine novelty from slow learning of a fixed law, and it shrinks as T grows. The A10 `T2` and `late` cells show by how much.
+
+### 3c.5 Predictions
+Each is evaluated per counted filter; "most" means at least 3 of 4; SSA; all worlds and dynamically rich worlds; M_A; intervals as in §3b.4.
+- **M0 (instrument check, not a hypothesis):** lawful_nt at m = 8 is at least lawful_nt at m = 1. A mixture over more orders can lose only its small learning cost, so a failure means a bug.
+- **M1 — law needs memory (risky).** The H1 contrast (simplicity − uniform-program lawful_nt) is larger at m = 8 than at m = 1. *Falsified if* the interval of the difference-in-differences lies below 0 for most counted filters. This is the computable shadow of Theorem 5.2 and Observation 5.3: the regularities a simplicity prior makes typical are ones a short-memory observer cannot see. Registered with low confidence: the rules that carry the simplicity arm's rich weight (105, 150, 126) may need more than 8 steps of memory.
+- **S1 — self-modelling emerges.** The anticipation gap is positive in the simplicity arm and exceeds the noise arm's, for most counted filters. *Not supported* otherwise. A null would not show observers don't model; footprints of at most 5 cells may be too small to hold one.
+- **O1 — lawful worlds are not merely frozen.** Among admitted non-trivial observers, depth and learning progress are each higher in the simplicity arm than in the noise arm, for most counted filters.
+- **O2 — no prediction.** The simplicity − uniform-program contrast in depth and in learning progress is reported with intervals. I expect it negative in all worlds, where 90% of the weight is dead, and I have no expectation in dynamically rich worlds.
+
+### 3c.6 Where it runs, and what it can establish
+- **Self-tests first** (Phase 0 rule; no world from the experiment is run before these pass):
+  - noise world: A, the gap, depth and learning progress are all about 0;
+  - rule 170 (shift) on a random IC, stationary window of width w: a_k ≈ ½ for k ≤ w and ≈ 0 beyond, since the window holds exactly the cells about to arrive at one of its two boundaries;
+  - a synthetic stream with only third-order dependence: h^(2) high, h^(4) low;
+  - h^(8) equals the existing h on every stream.
+- **First pass: exploratory.** The metrics are computed in the `full2a_sf` run (A9) and its A10 cells, using their own RNG stream so that no existing statistic changes. Those worlds have already been examined (§5.1), so this pass can expose instrument faults and suggest revisions. It cannot confirm M1, S1 or O1. The 2a verdicts read none of these fields.
+- **Confirmation: Phase 2b**, on fresh radius-2 worlds, with the definitions above frozen. Any change made after the exploratory pass is logged in NOTES.md and is first tested there.
+- **Still owed before 2b runs, and not covered here:** instruments generalised to radius r with their self-tests (§3b.1), 2b's sensitivity machine (§3b.2), the truncation report (A3), and whatever A10 requires.
+
+### 3c.7 In hypergraph terms
+- *Memory horizon:* the observer is a persistent subgraph, and its state is what can be read from it on one slice of a foliation. The external-memory limitation becomes sharper: a memory-carrying observer must be a subgraph whose present structure encodes its past, and whether rules produce such subgraphs is a question about the rule, not a parameter we set.
+- *Anticipation:* B_t becomes the causal edges entering the subgraph; A is what the subgraph's present state says about edges that will enter later. The control "same program elsewhere" becomes "an isomorphic subgraph pattern elsewhere".
+- *Depth and learning progress* carry over unchanged, since they are properties of the experience stream.
+- *Where it breaks:* a fixed footprint has no analogue when the subgraph itself is rewritten, so the observer needs an identity criterion over time. With multiway branching, "the future input" is a distribution over branches.
+
 ---
 
 ## 4. Running it
@@ -237,6 +337,12 @@ python -m lawlike.run --preset deep       # overnight: once full says it's worth
 # Phase 2a confirmation (README 3b.6, 3b.7): smoke2a, then quick2a (compute check), then full2a
 python -m lawlike.run --preset full2a     # ~2.5 h on 16 cores; writes report.md and report_2a.md
 python -m lawlike.size_check results/full2a   # A7 finite-size check, ~1-2 CPU-hours
+
+# 2a close-out (README 3b.8) and the exploratory first pass of 3c
+python -m lawlike.run --preset full2a_sf                       # A9: seam-free tile worlds; ~2.5 h on 16 cores
+python -m lawlike.seam_check results/full2a_sf results/full2a  # regression check, seamed vs seam-free verdicts
+python -m lawlike.size_cells results/full2a_sf                 # A10: N2 / late / T2 / NT2 cells
+python -m lawlike.analyze3c results/full2a_sf                  # memory horizons, anticipation, open-endedness
 ```
 
 Times assume a 4–8 core laptop (it uses all cores but one; override with `--workers`). On the dev machine, the cost was about 1.7 s/world for `quick` and 8 s/world for `full`, per core. The Phase 1 `full` run on a 16-thread machine measured 17.6 s/world (21 CPU-hours), so budget for that.
@@ -308,6 +414,9 @@ lawlike/
   preview2a.py      Phase 2a preview: Phase 1 results reweighted under M_A / M_B (§3b.6)
   analyze2a.py      Phase 2a analysis: priors x analyses, headline, fragility, fixed-rule intervals (§3b.7)
   size_check.py     Phase 2a finite-size check (§3b.7 A7)
+  size_cells.py     separated size checks: ring size, epoch, data length (§3b.8 A10)
+  seam_check.py     seam-free vs seamed 2a: regression check and verdict comparison (§3b.8 A9)
+  analyze3c.py      memory horizons, anticipation, open-endedness: predictions M0, M1, S1, O1, O2 (§3c)
   inspect_world.py  the microscope
   selftest.py       Phase 0 checks
 ```

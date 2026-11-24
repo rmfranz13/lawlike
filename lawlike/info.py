@@ -206,6 +206,8 @@ def mixture_codes(seq: np.ndarray, alt: np.ndarray | None, K: int, alphabet: int
       second_online: online code length of the second half (keeps learning)
       second_frozen: second half coded by the model frozen after the first half
       alt_frozen   : second half of `alt` coded by the same frozen model (perturbation test)
+      by_horizon   : {m: online code length of the whole sequence under orders 0..m only}, the
+                     experience of an observer whose state is its last m readings (README 3c.2)
     """
     T = seq.size
     T2 = T // 2
@@ -252,8 +254,12 @@ def mixture_codes(seq: np.ndarray, alt: np.ndarray | None, K: int, alphabet: int
     post -= np.log2(np.sum(np.exp2(post - post.max()))) + post.max()
     frozen = _mix(cl_frozen, post)
     alt_frozen = frozen if same else (_mix(cl_alt, post) if alt is not None else float("nan"))
+    by_h = {}
+    for m in range(K + 1):
+        lp = log_prior[:m + 1] - math.log2(np.sum(np.exp2(log_prior[:m + 1])))
+        by_h[m] = _mix(cl_total[:m + 1], lp)
     return dict(total=total, first=first, second_online=total - first,
-                second_frozen=frozen, alt_frozen=alt_frozen, T=T, T2=T2)
+                second_frozen=frozen, alt_frozen=alt_frozen, T=T, T2=T2, by_horizon=by_h)
 
 
 # ----------------------------------------------------------------------------- compression distance
